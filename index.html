@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robotic Arm Control</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171b21; --line:#262c35; --text:#e6e9ee; --muted:#8b95a3;
+    --accent:#3b82f6; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --track:#2a313b;
+  }
+  @media (prefers-color-scheme: light){
+    :root{--bg:#f4f6f9;--panel:#fff;--line:#e2e6ec;--text:#141820;--muted:#5e6875;--track:#dfe4ea}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5}
+  h1{font-size:17px;margin:0;font-weight:650}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  main{max-width:1200px;margin:0 auto;padding:16px;display:grid;gap:16px;grid-template-columns:1.25fr 1fr}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px}
+  button,select,input[type=number]{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.danger{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:600}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--bad)}
+  .dot.on{background:var(--ok)} .dot.sim{background:var(--warn)}
+  .joint{display:grid;grid-template-columns:130px 1fr 74px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line)}
+  .joint:last-child{border-bottom:0}
+  .joint label{font-weight:550}
+  .joint small{display:block;color:var(--muted);font-weight:400;font-size:11.5px}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  .joint input[type=number]{width:74px;padding:5px 6px;text-align:right}
+  .jog{display:flex;gap:4px}
+  .jog button{padding:3px 9px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  canvas{width:100%;height:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;display:block}
+  ul.poses{list-style:none;margin:8px 0;padding:0;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+  ul.poses li{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px}
+  ul.poses li:last-child{border-bottom:0}
+  ul.poses li.sel{background:color-mix(in srgb,var(--accent) 18%,transparent)}
+  ul.poses li code{color:var(--muted);font-size:12px}
+  #log{height:140px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;font:12px/1.4 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:var(--muted)}
+  .notice{padding:10px 12px;border-radius:8px;border:1px solid var(--warn);color:var(--text);background:color-mix(in srgb,var(--warn) 12%,transparent);margin:0 16px;max-width:1168px}
+  .wrap{max-width:1200px;margin:12px auto 0}
+  .muted{color:var(--muted)} .full{grid-column:1/-1}
+  kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:11.5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>6-DOF Robotic Arm · Web Control</h1>
+  <div class="row">
+    <span class="pill"><span id="dot" class="dot"></span><span id="status">Disconnected</span></span>
+    <button id="btnConnect" class="primary">Connect USB</button>
+    <button id="btnSim">Simulation</button>
+    <button id="btnStop" class="danger" title="Space / Esc">STOP</button>
+  </div>
+</header>
+
+<div class="wrap"><div id="noserial" class="notice" hidden>
+  This browser has no Web Serial support. Open this page in <b>Chrome</b> or <b>Edge</b> on a laptop/desktop to drive the arm over USB. Simulation mode still works here.
+</div></div>
+
+<main>
+  <section>
+    <h2>Joints</h2>
+    <div id="joints"></div>
+    <div class="row" style="margin-top:12px">
+      <button id="btnHome">Home</button>
+      <button id="btnOpen">Gripper open</button>
+      <button id="btnClose">Gripper close</button>
+      <button id="btnOff">Servos OFF</button>
+      <button id="btnOn">Servos ON</button>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>Speed <b id="spdVal">90</b> °/s</label>
+      <input id="speed" type="range" min="10" max="360" value="90" style="max-width:220px">
+      <label class="row" style="gap:6px"><input id="potMode" type="checkbox"> Potentiometer mode</label>
+      <label>Jog step <input id="jogStep" type="number" min="1" max="20" value="2" style="width:60px"></label>
+    </div>
+    <p class="muted" style="margin:10px 0 0;font-size:12.5px">
+      Keyboard: <kbd>Q</kbd>/<kbd>A</kbd> waist · <kbd>W</kbd>/<kbd>S</kbd> shoulder · <kbd>E</kbd>/<kbd>D</kbd> elbow ·
+      <kbd>R</kbd>/<kbd>F</kbd> wrist roll · <kbd>T</kbd>/<kbd>G</kbd> wrist pitch · <kbd>Y</kbd>/<kbd>H</kbd> gripper ·
+      <kbd>Space</kbd> stop
+    </p>
+  </section>
+
+  <section>
+    <h2>Arm preview</h2>
+    <canvas id="view" width="640" height="380"></canvas>
+    <p class="muted" style="margin:8px 0 0;font-size:12.5px">Side view (shoulder · elbow · wrist pitch) and top view (waist). Shows the commanded pose.</p>
+  </section>
+
+  <section>
+    <h2>Teach &amp; playback</h2>
+    <div class="row">
+      <button id="btnSave" class="primary">Save current pose</button>
+      <button id="btnGo">Go to</button>
+      <button id="btnUp">↑</button><button id="btnDown">↓</button>
+      <button id="btnDel">Delete</button>
+    </div>
+    <ul id="poses" class="poses"></ul>
+    <div class="row">
+      <label>Dwell <input id="dwell" type="number" min="0.2" max="10" step="0.1" value="1.5" style="width:70px"> s</label>
+      <label class="row" style="gap:6px"><input id="loop" type="checkbox"> Loop</label>
+      <button id="btnPlay">▶ Play</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnExport">Export JSON</button>
+      <label class="row"><button id="btnImportBtn">Import JSON</button><input id="importFile" type="file" accept=".json" hidden></label>
+      <button id="btnExample">Load example</button>
+      <button id="btnClear">Clear</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Console</h2>
+    <div id="log"></div>
+    <form id="cmdForm" class="row" style="margin-top:8px">
+      <input id="cmd" placeholder="Raw command, e.g.  J 5 90   or   ?" style="flex:1;font:inherit;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
+      <button>Send</button>
+    </form>
+  </section>
+</main>
+
+<script>
+// ------------------------------------------------------------------ config
+const JOINTS = [
+  {name:"Waist",       min:0,  max:180, home:90,  keys:["q","a"], hint:"ch0 · MG996R"},
+  {name:"Shoulder",    min:15, max:165, home:90,  keys:["w","s"], hint:"ch1 · MG996R"},
+  {name:"Elbow",       min:0,  max:180, home:90,  keys:["e","d"], hint:"ch2 · MG996R"},
+  {name:"Wrist roll",  min:0,  max:180, home:90,  keys:["r","f"], hint:"ch3 · SG90"},
+  {name:"Wrist pitch", min:0,  max:180, home:90,  keys:["t","g"], hint:"ch4 · SG90"},
+  {name:"Gripper",     min:90, max:180, home:180, keys:["y","h"], hint:"ch5 · 90 closed / 180 open"},
+];
+const GRIP_OPEN=180, GRIP_CLOSED=90, SEND_MS=50, BAUD=115200;
+const L1=125, L2=85, L3=60, BASE_H=110; // mm, for preview only
+const EXAMPLE = {dwell_s:1.5,poses:[
+  {name:"home",angles:[90,90,90,90,90,180]},{name:"above_pick",angles:[45,70,110,90,60,180]},
+  {name:"pick_down",angles:[45,55,125,90,55,180]},{name:"grip",angles:[45,55,125,90,55,95]},
+  {name:"lift",angles:[45,80,100,90,70,95]},{name:"above_place",angles:[135,80,100,90,70,95]},
+  {name:"place_down",angles:[135,58,122,90,56,95]},{name:"release",angles:[135,58,122,90,56,180]},
+  {name:"retract",angles:[135,85,95,90,80,180]},{name:"home_end",angles:[90,90,90,90,90,180]}]};
+
+// ------------------------------------------------------------------ state
+const $ = id => document.getElementById(id);
+let angles = JOINTS.map(j=>j.home);
+let dirty = false, port=null, writer=null, reader=null, sim=false, playing=false, playTimer=null;
+let poses = load("arm.poses", []), selected = -1;
+
+function load(k,d){ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):d; }catch{ return d; } }
+function save(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch{} }
+const connected = () => sim || !!writer;
+
+// ------------------------------------------------------------------ UI build
+const jointsEl=$("joints"), sliders=[], nums=[];
+JOINTS.forEach((j,i)=>{
+  const row=document.createElement("div"); row.className="joint";
+  row.innerHTML=`<label>${j.name}<small>${j.hint} · ${j.keys[0].toUpperCase()}/${j.keys[1].toUpperCase()}</small></label>
+    <input type="range" min="${j.min}" max="${j.max}" step="1" value="${j.home}">
+    <input type="number" min="${j.min}" max="${j.max}" value="${j.home}">`;
+  const r=row.children[1], n=row.children[2];
+  r.oninput=()=>setJoint(i,+r.value); n.onchange=()=>setJoint(i,+n.value);
+  sliders.push(r); nums.push(n); jointsEl.appendChild(row);
+});
+
+function clamp(i,v){ const j=JOINTS[i]; return Math.max(j.min,Math.min(j.max,Math.round(v))); }
+function setJoint(i,v){ angles[i]=clamp(i,v); sliders[i].value=nums[i].value=angles[i]; dirty=true; draw(); }
+function setAll(a){ a.forEach((v,i)=>setJoint(i,v)); }
+
+// ------------------------------------------------------------------ serial
+function log(msg){ const l=$("log"); l.textContent+=msg+"\n"; if(l.textContent.length>20000) l.textContent=l.textContent.slice(-15000); l.scrollTop=l.scrollHeight; }
+function setStatus(text,cls){ $("status").textContent=text; $("dot").className="dot "+(cls||""); }
+
+async function send(line){
+  if(sim){ log("> "+line); return; }
+  if(!writer) return;
+  try{ await writer.write(new TextEncoder().encode(line+"\n")); }
+  catch(e){ log("write error: "+e.message); }
+}
+
+async function connect(){
+  if(writer||sim){ await disconnect(); return; }
+  if(!("serial" in navigator)){ $("noserial").hidden=false; return; }
+  try{
+    port = await navigator.serial.requestPort();
+    await port.open({baudRate:BAUD});
+    writer = port.writable.getWriter();
+    setStatus("Connected (USB)","on"); $("btnConnect").textContent="Disconnect"; $("btnSim").disabled=true;
+    log("Port opened — waiting for ESP32 reset…");
+    readLoop();
+    setTimeout(()=>{ send("SPEED "+$("speed").value); send("?"); dirty=true; },1800);
+  }catch(e){ log("connect failed: "+e.message); port=null; writer=null; }
+}
+
+async function readLoop(){
+  const dec=new TextDecoder(); let buf="";
+  while(port && port.readable){
+    reader=port.readable.getReader();
+    try{
+      while(true){
+        const {value,done}=await reader.read(); if(done) break;
+        buf+=dec.decode(value); let k;
+        while((k=buf.indexOf("\n"))>=0){ const line=buf.slice(0,k).trim(); buf=buf.slice(k+1); if(line) onLine(line); }
+      }
+    }catch(e){ log("read error: "+e.message); break; }
+    finally{ reader.releaseLock(); reader=null; }
+  }
+}
+
+function onLine(line){
+  log("< "+line);
+  const m=line.match(/^POS ([\d.,\-]+)/);
+  if(m && !dirty){ const a=m[1].split(",").map(Number); if(a.length===6) a.forEach((v,i)=>{angles[i]=clamp(i,v); sliders[i].value=nums[i].value=angles[i];}); draw(); }
+}
+
+async function disconnect(){
+  stopPlay();
+  if(sim){ sim=false; setStatus("Disconnected"); $("btnSim").textContent="Simulation"; $("btnConnect").disabled=false; return; }
+  try{ if(reader) await reader.cancel(); }catch{}
+  try{ if(writer){ writer.releaseLock(); } }catch{}
+  try{ if(port) await port.close(); }catch{}
+  port=writer=reader=null;
+  setStatus("Disconnected"); $("btnConnect").textContent="Connect USB"; $("btnSim").disabled=false;
+}
+
+$("btnConnect").onclick=connect;
+$("btnSim").onclick=()=>{
+  if(sim){ disconnect(); return; }
+  sim=true; setStatus("Simulation","sim"); $("btnSim").textContent="Exit simulation"; $("btnConnect").disabled=true; log("Simulation mode — commands are only logged."); dirty=true;
+};
+if(!("serial" in navigator)) $("noserial").hidden=false;
+if(navigator.serial) navigator.serial.addEventListener("disconnect",()=>{ log("USB device unplugged"); disconnect(); });
+
+setInterval(()=>{ if(dirty && connected() && !$("potMode").checked){ send(angles.join(",")); dirty=false; } }, SEND_MS);
+
+// ------------------------------------------------------------------ actions
+const stop=()=>{ stopPlay(); send("STOP"); };
+$("btnStop").onclick=stop;
+$("btnHome").onclick=()=>setAll(JOINTS.map(j=>j.home));
+$("btnOpen").onclick=()=>setJoint(5,GRIP_OPEN);
+$("btnClose").onclick=()=>setJoint(5,GRIP_CLOSED);
+$("btnOff").onclick=()=>send("OFF");
+$("btnOn").onclick=()=>send("ON");
+let spdT; $("speed").oninput=e=>{ $("spdVal").textContent=e.target.value; clearTimeout(spdT); spdT=setTimeout(()=>send("SPEED "+e.target.value),150); };
+$("potMode").onchange=e=>{ send(e.target.checked?"MODE POT":"MODE SERIAL"); if(!e.target.checked) dirty=true; };
+$("cmdForm").onsubmit=e=>{ e.preventDefault(); const c=$("cmd").value.trim(); if(c){ send(c); $("cmd").value=""; } };
+
+document.addEventListener("keydown",e=>{
+  if(["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName) && e.target.type!=="range" && e.target.type!=="checkbox") return;
+  const k=e.key.toLowerCase();
+  if(k===" "||k==="escape"){ e.preventDefault(); stop(); return; }
+  const step=+$("jogStep").value||2;
+  JOINTS.forEach((j,i)=>{ if(k===j.keys[0]) setJoint(i,angles[i]+step); if(k===j.keys[1]) setJoint(i,angles[i]-step); });
+});
+
+// ------------------------------------------------------------------ poses
+function renderPoses(){
+  const ul=$("poses"); ul.innerHTML="";
+  if(!poses.length){ ul.innerHTML=`<li class="muted">No poses yet — move the arm and click “Save current pose”.</li>`; }
+  poses.forEach((p,k)=>{
+    const li=document.createElement("li"); if(k===selected) li.className="sel";
+    li.innerHTML=`<span>${k+1}. ${p.name.replace(/</g,"&lt;")}</span><code>${p.angles.join(", ")}</code>`;
+    li.onclick=()=>{ selected=k; renderPoses(); };
+    li.ondblclick=()=>setAll(p.angles);
+    ul.appendChild(li);
+  });
+  save("arm.poses",poses);
+}
+$("btnSave").onclick=()=>{ const n=prompt("Pose name:","pose"+(poses.length+1)); if(n){ poses.push({name:n,angles:[...angles]}); selected=poses.length-1; renderPoses(); } };
+$("btnGo").onclick=()=>{ if(poses[selected]) setAll(poses[selected].angles); };
+$("btnDel").onclick=()=>{ if(poses[selected]){ poses.splice(selected,1); selected=Math.min(selected,poses.length-1); renderPoses(); } };
+const move=d=>{ const k=selected,t=k+d; if(k<0||t<0||t>=poses.length) return; [poses[k],poses[t]]=[poses[t],poses[k]]; selected=t; renderPoses(); };
+$("btnUp").onclick=()=>move(-1); $("btnDown").onclick=()=>move(1);
+$("btnClear").onclick=()=>{ if(poses.length && confirm("Delete all poses?")){ poses=[]; selected=-1; renderPoses(); } };
+$("btnExample").onclick=()=>{ poses=EXAMPLE.poses.map(p=>({...p,angles:[...p.angles]})); $("dwell").value=EXAMPLE.dwell_s; selected=0; renderPoses(); };
+$("btnExport").onclick=()=>{
+  const blob=new Blob([JSON.stringify({dwell_s:+$("dwell").value,poses},null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="arm_poses.json"; a.click(); URL.revokeObjectURL(a.href);
+};
+$("btnImportBtn").onclick=()=>$("importFile").click();
+$("importFile").onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{ const d=JSON.parse(await f.text()); poses=(d.poses||[]).filter(p=>Array.isArray(p.angles)&&p.angles.length===6); if(d.dwell_s) $("dwell").value=d.dwell_s; selected=poses.length?0:-1; renderPoses(); }
+  catch(err){ alert("Invalid JSON: "+err.message); }
+  e.target.value="";
+};
+
+function stopPlay(){ playing=false; clearTimeout(playTimer); $("btnPlay").textContent="▶ Play"; }
+function playStep(k){
+  if(!playing) return;
+  if(k>=poses.length){ if($("loop").checked) k=0; else { stopPlay(); return; } }
+  selected=k; renderPoses(); setAll(poses[k].angles);
+  playTimer=setTimeout(()=>playStep(k+1), (+$("dwell").value||1.5)*1000);
+}
+$("btnPlay").onclick=()=>{ if(playing){ stopPlay(); return; } if(!poses.length){ alert("Save at least one pose first."); return; } playing=true; $("btnPlay").textContent="■ Stop"; playStep(0); };
+
+// ------------------------------------------------------------------ preview
+const cv=$("view"), ctx=cv.getContext("2d");
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function draw(){
+  const W=cv.width,H=cv.height; ctx.clearRect(0,0,W,H);
+  const fg=css("--text"), mu=css("--muted"), ac=css("--accent"), ln=css("--line");
+  ctx.font="12px system-ui"; ctx.lineCap="round";
+  // ---- side view
+  const ox=150, oy=H-40, s=0.85;
+  ctx.strokeStyle=ln; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(20,oy); ctx.lineTo(380,oy); ctx.stroke();
+  ctx.fillStyle=mu; ctx.fillText("SIDE",20,20);
+  const rad=d=>d*Math.PI/180;
+  const th1=rad(angles[1]);                    // shoulder: 90 = vertical
+  const th2=th1+rad(angles[2]-90)*-1-Math.PI/2; // elbow: 90 = perpendicular to upper arm
+  const th3=th2+rad(angles[4]-90)*-1;          // wrist pitch: 90 = straight
+  const p0=[ox,oy-BASE_H*s];
+  const p1=[p0[0]+Math.cos(th1)*L1*s, p0[1]-Math.sin(th1)*L1*s];
+  const p2=[p1[0]+Math.cos(th2)*L2*s, p1[1]-Math.sin(th2)*L2*s];
+  const p3=[p2[0]+Math.cos(th3)*L3*s, p2[1]-Math.sin(th3)*L3*s];
+  ctx.fillStyle=ln; ctx.fillRect(ox-28,p0[1],56,BASE_H*s);
+  [[p0,p1,12],[p1,p2,9],[p2,p3,6]].forEach(([a,b,w])=>{ ctx.strokeStyle=fg; ctx.lineWidth=w; ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke(); });
+  // gripper jaws
+  const open=(angles[5]-90)/90, jaw=6+open*12, nx=-Math.sin(th3), ny=-Math.cos(th3);
+  ctx.strokeStyle=ac; ctx.lineWidth=4;
+  [1,-1].forEach(sg=>{ const bx=p3[0]+nx*jaw*sg, by=p3[1]+ny*jaw*sg; ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(bx+Math.cos(th3)*18,by-Math.sin(th3)*18); ctx.stroke(); });
+  [p0,p1,p2].forEach(p=>{ ctx.fillStyle=ac; ctx.beginPath(); ctx.arc(...p,5,0,7); ctx.fill(); });
+  // ---- top view
+  const cx=W-130, cy=H/2+10, R=100;
+  ctx.fillStyle=mu; ctx.fillText("TOP (waist)",cx-R,20);
+  ctx.strokeStyle=ln; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx,cy,R,Math.PI,0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx-R,cy); ctx.lineTo(cx+R,cy); ctx.stroke();
+  const wa=Math.PI-rad(angles[0]);
+  ctx.strokeStyle=fg; ctx.lineWidth=8; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(wa)*R*0.85, cy-Math.sin(wa)*R*0.85); ctx.stroke();
+  ctx.fillStyle=ac; ctx.beginPath(); ctx.arc(cx,cy,7,0,7); ctx.fill();
+  ctx.fillStyle=mu; ctx.fillText("0°",cx+R-8,cy+16); ctx.fillText("180°",cx-R-6,cy+16); ctx.fillText("90°",cx-9,cy-R-6);
+  // readout
+  ctx.fillStyle=fg; ctx.fillText(angles.map((a,i)=>JOINTS[i].name.split(" ").map(w=>w[0]).join("").toUpperCase()+" "+a+"°").join("   "),20,H-12);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change",draw);
+renderPoses(); draw();
+</script>
+</body>
+</html>

@@ -1,5 +1,14 @@
 # Manual Robotic Arm Control (6-DOF, ESP32 + PCA9685)
 
+## 🌐 Control it from the browser
+
+**https://stevejosh1805.github.io/manual-robotic-arm-control/**
+
+Plug the ESP32 into your laptop over USB, open the link in **Chrome or Edge**, and click **Connect USB**.
+The page talks to the arm directly through the Web Serial API, so there's nothing to install. Use **Simulation** to try it without hardware.
+
+---
+
 Everything needed to **manually operate** a 6-DOF hobby robotic arm
 (HowToMechatronics-style: MG996R ×3 + SG90 ×3):
 
