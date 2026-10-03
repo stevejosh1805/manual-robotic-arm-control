@@ -1,0 +1,15 @@
+{
+  "dwell_s": 1.5,
+  "poses": [
+    {"name": "home",          "angles": [90, 90, 90, 90, 90, 180]},
+    {"name": "above_pick",    "angles": [45, 70, 110, 90, 60, 180]},
+    {"name": "pick_down",     "angles": [45, 55, 125, 90, 55, 180]},
+    {"name": "grip",          "angles": [45, 55, 125, 90, 55, 95]},
+    {"name": "lift",          "angles": [45, 80, 100, 90, 70, 95]},
+    {"name": "above_place",   "angles": [135, 80, 100, 90, 70, 95]},
+    {"name": "place_down",    "angles": [135, 58, 122, 90, 56, 95]},
+    {"name": "release",       "angles": [135, 58, 122, 90, 56, 180]},
+    {"name": "retract",       "angles": [135, 85, 95, 90, 80, 180]},
+    {"name": "home_end",      "angles": [90, 90, 90, 90, 90, 180]}
+  ]
+}
